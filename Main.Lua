@@ -602,6 +602,35 @@ end)
 --                       6. TAB MISC LOGIC                            --
 --====================================================================--
 
+-- Tombol Sell All Fish (Ditambahkan)
+local SellAllBtn = CreateButton(Tabs.Misc, "🐟 Sell All Fish", function() end)
+SellAllBtn.MouseButton1Click:Connect(function()
+    SellAllBtn.Text = "Selling..."
+    pcall(function()
+        local fishingSys = ReplicatedStorage:FindFirstChild("FishingSystem")
+        if fishingSys and fishingSys:FindFirstChild("InventoryEvents") then
+            local sellRemote = fishingSys.InventoryEvents:FindFirstChild("Inventory_SellAll")
+            if sellRemote then
+                local coinsEarned = sellRemote:InvokeServer()
+                if coinsEarned then
+                    SellAllBtn.Text = "Sold! +" .. tostring(coinsEarned) .. " Coins"
+                else
+                    SellAllBtn.Text = "Inventory Empty / Sold!"
+                end
+            else
+                SellAllBtn.Text = "Sell Remote Not Found"
+            end
+        else
+            SellAllBtn.Text = "FishingSystem Not Found"
+        end
+    end)
+    task.delay(2, function()
+        if SellAllBtn and SellAllBtn.Parent then
+            SellAllBtn.Text = "🐟 Sell All Fish"
+        end
+    end)
+end)
+
 CreateInput(Tabs.Misc, "Atur Speed (Contoh: 50)", function(val)
     local num = tonumber(val)
     if num and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
