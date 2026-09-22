@@ -35,7 +35,7 @@ local function clearSavedKey()
     end
 end
 
--- Fungsi Validasi Key Online (Hybrid JSON & Lua Table Parser)
+-- Fungsi Validasi Key Online (Direct Lua Loadstring Parser)
 local function checkKey(userKey, isNewLogin)
     local success, response = pcall(function()
         return game:HttpGet(KEY_LIST_URL .. "?t=" .. tostring(os.time())) -- Mencegah Cache GitHub
@@ -47,21 +47,24 @@ local function checkKey(userKey, isNewLogin)
 
     local data = nil
 
-    -- Percobaan 1: Coba Parse sebagai JSON
-    local decodeSuccess, jsonParsed = pcall(function()
-        return HttpService:JSONDecode(response)
+    -- 1. Coba load sebagai Script / Table Lua
+    local loadSuccess, result = pcall(function()
+        local rawFunc = loadstring(response)
+        if rawFunc then
+            return rawFunc()
+        end
+        return loadstring("return " .. response)()
     end)
 
-    if decodeSuccess and jsonParsed then
-        data = jsonParsed
+    if loadSuccess and type(result) == "table" then
+        data = result
     else
-        -- Percobaan 2: Fallback jika isi file GitHub berbentuk Lua Table
-        local loadSuccess, luaParsed = pcall(function()
-            local func = loadstring("return " .. response) or loadstring(response)
-            return func()
+        -- 2. Fallback jika GitHub masih dalam format JSON
+        local jsonSuccess, jsonResult = pcall(function()
+            return HttpService:JSONDecode(response)
         end)
-        if loadSuccess and type(luaParsed) == "table" then
-            data = luaParsed
+        if jsonSuccess and type(jsonResult) == "table" then
+            data = jsonResult
         end
     end
 
