@@ -35,27 +35,43 @@ local function clearSavedKey()
     end
 end
 
--- Fungsi Validasi Key Online (Bisa untuk semua device)
+-- Fungsi Validasi Key Online (Hybrid JSON & Lua Table Parser)
 local function checkKey(userKey, isNewLogin)
     local success, response = pcall(function()
-        return game:HttpGet(KEY_LIST_URL)
+        return game:HttpGet(KEY_LIST_URL .. "?t=" .. tostring(os.time())) -- Mencegah Cache GitHub
     end)
     
-    if not success or not response then
+    if not success or not response or response == "" then
         return false, "Gagal terhubung ke database key!"
     end
 
-    local decodeSuccess, data = pcall(function()
+    local data = nil
+
+    -- Percobaan 1: Coba Parse sebagai JSON
+    local decodeSuccess, jsonParsed = pcall(function()
         return HttpService:JSONDecode(response)
     end)
 
-    if not decodeSuccess or not data or not data.KEYS then
+    if decodeSuccess and jsonParsed then
+        data = jsonParsed
+    else
+        -- Percobaan 2: Fallback jika isi file GitHub berbentuk Lua Table
+        local loadSuccess, luaParsed = pcall(function()
+            local func = loadstring("return " .. response) or loadstring(response)
+            return func()
+        end)
+        if loadSuccess and type(luaParsed) == "table" then
+            data = luaParsed
+        end
+    end
+
+    if not data or not data.KEYS then
         return false, "Format database key salah!"
     end
 
+    -- Pengecekan Key
     local keyData = data.KEYS[userKey]
     if keyData then
-        -- Multi-device: Pengecekan HWID dilewati agar 1 key bisa dipakai bersama
         if isNewLogin then
             createNewSaveData(userKey)
         end
@@ -68,7 +84,7 @@ end
 local function executeMainScript()
     print("[MasensDev Hub] Memuat Main.lua...")
     local success, err = pcall(function()
-        loadstring(game:HttpGet(MAIN_SCRIPT_URL))()
+        loadstring(game:HttpGet(MAIN_SCRIPT_URL .. "?t=" .. tostring(os.time())))()
     end)
     if not success then
         warn("[MasensDev Hub] Gagal memuat Main.lua:", err)
@@ -91,7 +107,6 @@ if isfile and isfile(SAVE_FILE) then
             local timeElapsed = currentTime - parsedData.timestamp
             
             if timeElapsed < KEY_EXPIRE_TIME then
-                -- Key masih berlaku, validasi ke database online (isNewLogin = false agar timestamp tidak ter-reset)
                 local isValid, _ = checkKey(parsedData.key, false)
                 if isValid then
                     local timeRemaining = KEY_EXPIRE_TIME - timeElapsed
@@ -105,7 +120,6 @@ if isfile and isfile(SAVE_FILE) then
                     clearSavedKey()
                 end
             else
-                -- Sudah lewat dari 12 Jam sejak login pertama
                 print("[MasensDev Hub] Key sudah kedaluwarsa (lebih dari 12 Jam).")
                 clearSavedKey()
             end
@@ -206,7 +220,6 @@ SubmitBtn.MouseButton1Click:Connect(function()
     local userKey = InputBox.Text
     SubmitBtn.Text = "Memeriksa..."
     
-    -- Pass 'true' karena ini login pertama via GUI
     local success, msg = checkKey(userKey, true)
     if success then
         SubmitBtn.Text = "BERHASIL!"
