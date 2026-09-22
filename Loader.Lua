@@ -1,6 +1,6 @@
 -- ====================================================================
--- MASENSDEV HUB - KEY SYSTEM & LOADER (WITH FORCE RESET FEATURE)
--- Red & Black Theme (0.4 Transparency) + Fixed 12 Hours Multi-Device System
+-- MASENSDEV HUB - KEY SYSTEM & LOADER (STRICT AUTO-RESET FIX)
+-- Red & Black Theme (0.4 Transparency) + Fixed 12 Hours System
 -- ====================================================================
 
 local HttpService = game:GetService("HttpService")
@@ -32,12 +32,13 @@ end
 -- Helper Hapus Data Key
 local function clearSavedKey()
     if isfile and isfile(SAVE_FILE) and delfile then
-        delfile(SAVE_FILE)
+        pcall(function() delfile(SAVE_FILE) end)
     end
 end
 
--- Fungsi Validasi Key Online (Standard JSON Parser + Version Validator)
+-- Fungsi Validasi Key Online
 local function checkKey(userKey, isNewLogin, localSavedVersion)
+    -- Mencegah Cache GitHub dengan timestamp acak
     local bypassUrl = KEY_LIST_URL .. "?nocache=" .. tostring(os.time()) .. "_" .. tostring(math.random(1000, 9999))
     
     local success, response = pcall(function()
@@ -58,21 +59,24 @@ local function checkKey(userKey, isNewLogin, localSavedVersion)
 
     local currentDbVersion = data.version or 1
 
-    -- Pengecekan Versi Database (Jika Admin Mengubah Version di GitHub -> Paksa Reset)
+    -- 1. Jika Versi Database di GitHub berubah -> Hapus Simpanan Lokal & Paksa Login Ulang
     if localSavedVersion and localSavedVersion ~= currentDbVersion then
         clearSavedKey()
-        return false, "Database di-reset! Silakan masukkan key baru."
+        return false, "Database di-reset! Masukkan key baru."
     end
 
+    -- 2. Cek Apakah Key yang dimasukkan/disimpan ada di daftar KEYS GitHub
     local keyData = data.KEYS[userKey]
     if keyData then
         if isNewLogin then
             createNewSaveData(userKey, currentDbVersion)
         end
         return true, "Valid"
+    else
+        -- Jika key lokal tidak ditemukan lagi di GitHub (karena sudah kamu ganti/hapus)
+        clearSavedKey()
+        return false, "Key lama sudah tidak berlaku!"
     end
-
-    return false, "Key tidak valid / tidak ditemukan!"
 end
 
 local function executeMainScript()
@@ -85,7 +89,7 @@ local function executeMainScript()
     end
 end
 
--- 1. CEK AUTO-LOGIN & BATAS WAKTU 12 JAM REAL-TIME + VERSI DATABASE
+-- 1. CEK AUTO-LOGIN & VALIDASI STRICT KEY LOKAL
 if isfile and isfile(SAVE_FILE) then
     local readSuccess, fileContent = pcall(function()
         return readfile(SAVE_FILE)
@@ -101,8 +105,8 @@ if isfile and isfile(SAVE_FILE) then
             local timeElapsed = currentTime - parsedData.timestamp
             
             if timeElapsed < KEY_EXPIRE_TIME then
-                -- Kirimkan parsedData.version lokal untuk dicocokkan dengan versi GitHub
-                local isValid, _ = checkKey(parsedData.key, false, parsedData.version)
+                -- Validasi key lokal langsung ke GitHub
+                local isValid, msg = checkKey(parsedData.key, false, parsedData.version)
                 if isValid then
                     local timeRemaining = KEY_EXPIRE_TIME - timeElapsed
                     local hoursRemaining = math.floor(timeRemaining / 3600)
@@ -112,6 +116,7 @@ if isfile and isfile(SAVE_FILE) then
                     executeMainScript()
                     return
                 else
+                    print("[MasensDev Hub] Auto-login gagal:", msg)
                     clearSavedKey()
                 end
             else
@@ -136,6 +141,7 @@ ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
 if not ScreenGui.Parent then ScreenGui.Parent = player:WaitForChild("PlayerGui") end
 
+-- Frame Utama
 local Frame = Instance.new("Frame", ScreenGui)
 Frame.Size = UDim2.new(0, 330, 0, 195)
 Frame.Position = UDim2.new(0.5, -165, 0.4, -97)
@@ -152,6 +158,7 @@ local mainStroke = Instance.new("UIStroke", Frame)
 mainStroke.Color = Color3.fromRGB(200, 0, 0)
 mainStroke.Thickness = 1.5
 
+-- Title Bar
 local Title = Instance.new("TextLabel", Frame)
 Title.Size = UDim2.new(1, 0, 0, 38)
 Title.Text = "MasensDev Hub - Key System"
@@ -164,6 +171,7 @@ Title.TextSize = 15
 local titleCorner = Instance.new("UICorner", Title)
 titleCorner.CornerRadius = UDim.new(0, 10)
 
+-- Input Box
 local InputBox = Instance.new("TextBox", Frame)
 InputBox.Size = UDim2.new(0.9, 0, 0, 36)
 InputBox.Position = UDim2.new(0.05, 0, 0.30, 0)
@@ -179,6 +187,7 @@ InputBox.TextSize = 13
 local inputCorner = Instance.new("UICorner", InputBox)
 inputCorner.CornerRadius = UDim.new(0, 6)
 
+-- TOMBOL LOGIN
 local SubmitBtn = Instance.new("TextButton", Frame)
 SubmitBtn.Size = UDim2.new(0.43, 0, 0, 36)
 SubmitBtn.Position = UDim2.new(0.05, 0, 0.60, 0)
@@ -192,6 +201,7 @@ SubmitBtn.TextSize = 14
 local submitCorner = Instance.new("UICorner", SubmitBtn)
 submitCorner.CornerRadius = UDim.new(0, 6)
 
+-- TOMBOL GET KEY
 local GetKeyBtn = Instance.new("TextButton", Frame)
 GetKeyBtn.Size = UDim2.new(0.43, 0, 0, 36)
 GetKeyBtn.Position = UDim2.new(0.52, 0, 0.60, 0)
@@ -205,6 +215,7 @@ GetKeyBtn.TextSize = 14
 local getKeyCorner = Instance.new("UICorner", GetKeyBtn)
 getKeyCorner.CornerRadius = UDim.new(0, 6)
 
+-- LOGIKA BUTTON
 SubmitBtn.MouseButton1Click:Connect(function()
     local userKey = InputBox.Text
     SubmitBtn.Text = "Memeriksa..."
