@@ -9,7 +9,7 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
 -- KONFIGURASI REPOSITORY & SAVING
-local KEY_LIST_URL = "https://raw.githubusercontent.com/ens9555/Sorry/refs/heads/main/Keys.Json"
+local KEY_LIST_URL = "https://raw.githubusercontent.com/ens9555/Sorry/refs/heads/main/Keys.json"
 local MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/ens9555/Sorry/refs/heads/main/Main.Lua"
 local SAVE_FILE = "MD_MasensDevHub_KeySave.json"
 local KEY_EXPIRE_TIME = 12 * 3600 -- 12 Jam dalam detik (43.200 detik)
@@ -17,12 +17,12 @@ local KEY_EXPIRE_TIME = 12 * 3600 -- 12 Jam dalam detik (43.200 detik)
 -- LINK GET KEY
 local GET_KEY_LINK = "https://link-center.net/9347872/hhoRnAmsCNAH" 
 
--- Helper Simpan Data Key + Timestamp (Hanya dipanggil saat PERTAMA KALI LOGIN)
+-- Helper Simpan Data Key + Timestamp
 local function createNewSaveData(key)
     if writefile then
         local saveData = {
             key = key,
-            timestamp = os.time() -- Mencatat waktu pertama kali login
+            timestamp = os.time()
         }
         writefile(SAVE_FILE, HttpService:JSONEncode(saveData))
     end
@@ -35,44 +35,27 @@ local function clearSavedKey()
     end
 end
 
--- Fungsi Validasi Key Online (Direct Lua Loadstring Parser)
+-- Fungsi Validasi Key Online (Standard JSON Parser)
 local function checkKey(userKey, isNewLogin)
+    -- Mencegah Cache dengan query acak
+    local bypassUrl = KEY_LIST_URL .. "?nocache=" .. tostring(os.time()) .. "_" .. tostring(math.random(1000, 9999))
+    
     local success, response = pcall(function()
-        return game:HttpGet(KEY_LIST_URL .. "?t=" .. tostring(os.time())) -- Mencegah Cache GitHub
+        return game:HttpGet(bypassUrl)
     end)
     
     if not success or not response or response == "" then
         return false, "Gagal terhubung ke database key!"
     end
 
-    local data = nil
-
-    -- 1. Coba load sebagai Script / Table Lua
-    local loadSuccess, result = pcall(function()
-        local rawFunc = loadstring(response)
-        if rawFunc then
-            return rawFunc()
-        end
-        return loadstring("return " .. response)()
+    local decodeSuccess, data = pcall(function()
+        return HttpService:JSONDecode(response)
     end)
 
-    if loadSuccess and type(result) == "table" then
-        data = result
-    else
-        -- 2. Fallback jika GitHub masih dalam format JSON
-        local jsonSuccess, jsonResult = pcall(function()
-            return HttpService:JSONDecode(response)
-        end)
-        if jsonSuccess and type(jsonResult) == "table" then
-            data = jsonResult
-        end
-    end
-
-    if not data or not data.KEYS then
+    if not decodeSuccess or not data or type(data) ~= "table" or not data.KEYS then
         return false, "Format database key salah!"
     end
 
-    -- Pengecekan Key
     local keyData = data.KEYS[userKey]
     if keyData then
         if isNewLogin then
@@ -87,7 +70,7 @@ end
 local function executeMainScript()
     print("[MasensDev Hub] Memuat Main.lua...")
     local success, err = pcall(function()
-        loadstring(game:HttpGet(MAIN_SCRIPT_URL .. "?t=" .. tostring(os.time())))()
+        loadstring(game:HttpGet(MAIN_SCRIPT_URL .. "?nocache=" .. tostring(os.time())))()
     end)
     if not success then
         warn("[MasensDev Hub] Gagal memuat Main.lua:", err)
