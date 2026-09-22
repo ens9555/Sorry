@@ -1,10 +1,10 @@
-{
-  "KEYS": {
-    "MASENS-VIP-8899": {
-      "hwid": "7D8A9F0E-1234-5678-ABCD-EF9012345678"
-    },
-    "MASENS-DEV-2026": {
-      "hwid": ""
+return {
+    ["KEYS"] = {
+        ["MASENS-VIP-8899"] = {
+            ["hwid"] = "7D8A9F0E-1234-5678-ABCD-EF9012345678"
+        },
+        ["MASENS-DEV-2026"] = {
+            ["hwid"] = ""
+        }
     }
-  }
 }
