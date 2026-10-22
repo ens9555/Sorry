@@ -7,7 +7,6 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -79,9 +78,8 @@ local CP_Ordered = {
 }
 
 -- States & Settings
-local FlySpeed = 100
+local FlySpeed = 200
 local AutoSummitActive = false
-local AutoSkipActive = false
 local NoclipActive = false
 local InfiniteJumpActive = false
 local AntiAfkActive = false
@@ -427,11 +425,41 @@ local function SmoothFlyTo(targetPos, speed)
         end
     end)
 
-    CurrentTween:Play()
-    CurrentTween.Completed:Wait()
-    noclipConn:Disconnect()
+    local finished = false
+    local tw = CurrentTween
+    tw.Completed:Connect(function() finished = true end)
+    tw:Play()
 
+    -- Tunggu tween selesai (ada timeout supaya tidak hang saat respawn / dibatalkan)
+    local t0 = tick()
+    while not finished and tick() - t0 < duration + 3 do
+        task.wait(0.1)
+    end
+
+    noclipConn:Disconnect()
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
     if humanoid then humanoid.PlatformStand = false end
+end
+
+-- Cari checkpoint terdekat dari posisi karakter (cadangan kalau leaderstats tidak ada)
+local function GetNearestCPIndex()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return 0 end
+    local bestIdx, bestDist = 1, math.huge
+    for i, pos in ipairs(CP_Ordered) do
+        local d = (hrp.Position - pos).Magnitude
+        if d < bestDist then bestDist, bestIdx = d, i end
+    end
+    return bestIdx - 1 -- 0 = Basecamp
+end
+
+local function HasCPStat()
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    return ls and (ls:FindFirstChild("Checkpoint") or ls:FindFirstChild("CP")) ~= nil
 end
 
 -- 1. AUTO CHECKPOINT TO SUMMIT
@@ -441,24 +469,41 @@ AutoSummitBtn.MouseButton1Click:Connect(function()
     AutoSummitBtn.Text = "AUTO CHECKPOINT TO SUMMIT: " .. (AutoSummitActive and "ON" or "OFF")
     
     if AutoSummitActive then
-        AutoSkipActive = false
-        AutoSkipBtn.Text = "AUTO SKIP CHECKPOINT: OFF"
-        
         task.spawn(function()
+            local lastTarget, sameCount = nil, 0
             while AutoSummitActive do
-                if IsAtSummit() or GetCurrentCPIndex() >= 32 then
-                    repeat
-                        TriggerGameResetGUI()
-                        task.wait(1)
-                    until not IsAtSummit() or not AutoSummitActive
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then
+                    task.wait(1) -- tunggu respawn
                 else
-                    local currentCP = GetCurrentCPIndex()
-                    local nextIndex = currentCP + 2
-                    if nextIndex <= #CP_Ordered then
-                        SmoothFlyTo(CP_Ordered[nextIndex], FlySpeed)
+                    local currentCP = HasCPStat() and GetCurrentCPIndex() or GetNearestCPIndex()
+
+                    if IsAtSummit() or currentCP >= 32 then
+                        repeat
+                            TriggerGameResetGUI()
+                            task.wait(1)
+                        until not AutoSummitActive or not IsAtSummit()
+                        lastTarget, sameCount = nil, 0
+                    else
+                        local nextIndex = currentCP + 2 -- CP_Ordered mulai dari index 1 (= CP 0)
+
+                        -- Kalau target sama terus (stat tidak naik), lompat ke CP berikutnya
+                        if nextIndex == lastTarget then
+                            sameCount = sameCount + 1
+                            if sameCount >= 2 then nextIndex = nextIndex + 1 end
+                        else
+                            sameCount = 0
+                        end
+                        nextIndex = math.min(nextIndex, #CP_Ordered)
+                        lastTarget = nextIndex
+
+                        local ok, err = pcall(SmoothFlyTo, CP_Ordered[nextIndex], FlySpeed)
+                        if not ok then warn("[AutoSummit] error: " .. tostring(err)) end
+                        task.wait(0.5)
                     end
                 end
-                task.wait(0.5)
+                task.wait(0.2)
             end
         end)
     else
@@ -467,43 +512,6 @@ AutoSummitBtn.MouseButton1Click:Connect(function()
             LocalPlayer.Character:FindFirstChildOfClass("Humanoid").PlatformStand = false
         end
     end
-end)
-
--- 2. AUTO SKIP CHECKPOINT
-local AutoSkipBtn = CreateButton(Tabs.Main, "AUTO SKIP CHECKPOINT: OFF", function() end)
-AutoSkipBtn.MouseButton1Click:Connect(function()
-    AutoSkipActive = not AutoSkipActive
-    AutoSkipBtn.Text = "AUTO SKIP CHECKPOINT: " .. (AutoSkipActive and "ON" or "OFF")
-
-    if AutoSkipActive then
-        AutoSummitActive = false
-        AutoSummitBtn.Text = "AUTO CHECKPOINT TO SUMMIT: OFF"
-        
-        task.spawn(function()
-            while AutoSkipActive do
-                if IsAtSummit() or GetCurrentCPIndex() >= 32 then
-                    repeat
-                        TriggerGameResetGUI()
-                        task.wait(1)
-                    until not IsAtSummit() or not AutoSkipActive
-                end
-                
-                if not AutoSkipActive then break end
-                
-                TeleportTo(Checkpoints["CP 1"])
-                task.wait(0.5)
-                if not AutoSkipActive then break end
-                
-                TeleportTo(Checkpoints["Summit Utama"])
-                task.wait(1)
-            end
-        end)
-    end
-end)
-
-CreateInput(Tabs.Main, "Kecepatan Terbang (Def: 100)", function(val)
-    local num = tonumber(val)
-    if num then FlySpeed = num end
 end)
 
 -- Teleport Dropdown (Fixed Ordered List)
@@ -693,21 +701,6 @@ end)
 
 CreateButton(Tabs.Settings, "Rejoin Server", function()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
-end)
-
-CreateButton(Tabs.Settings, "Hop Server (Pemain Sedikit)", function()
-    pcall(function()
-        local api = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-        local result = HttpService:JSONDecode(game:HttpGet(api))
-        if result and result.data then
-            for _, server in ipairs(result.data) do
-                if server.playing < server.maxPlayers and server.id ~= game.JobId then
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
-                    break
-                end
-            end
-        end
-    end)
 end)
 
 CreateButton(Tabs.Settings, "Copy Discord Link", function()
